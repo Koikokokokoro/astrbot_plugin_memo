@@ -1,24 +1,79 @@
+import os
+import json
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+import astrbot.api.message_components as Comp
 
-@register("helloworld", "YourName", "一个简单的 Hello World 插件", "1.0.0")
-class MyPlugin(Star):
+@register("备忘录", "Koikokokokoro", "简易备忘录", "0.1.0")
+class MemoPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+        base = os.getcwd()
+        self.plugin_dir = os.path.join(base, "data", "plugins", "astrbot_plugin_memo")
+        os.makedirs(self.plugin_dir, exist_ok=True)
+        self.memo_file = os.path.join(self.plugin_dir, "memos.json")
+        if not os.path.exists(self.memo_file):
+            with open(self.memo_file, 'w', encoding='utf-8') as f:
+                json.dump({}, f)
 
-    async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
-    
-    # 注册指令的装饰器。指令名为 helloworld。注册成功后，发送 `/helloworld` 就会触发这个指令，并回复 `你好, {user_name}!`
-    @filter.command("helloworld")
-    async def helloworld(self, event: AstrMessageEvent):
-        """这是一个 hello world 指令""" # 这是 handler 的描述，将会被解析方便用户了解插件内容。建议填写。
-        user_name = event.get_sender_name()
-        message_str = event.message_str # 用户发的纯文本消息字符串
-        message_chain = event.get_messages() # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        yield event.plain_result(f"Hello, {user_name}, 你发了 {message_str}!") # 发送一条纯文本消息
+    def _load(self):
+        try:
+            with open(self.memo_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"读取备忘录失败: {e}")
+            return {}
+
+    def _save(self, data):
+        try:
+            with open(self.memo_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存备忘录失败: {e}")
+
+    @filter.command("备忘")
+    async def add_memo(self, event: AstrMessageEvent, content: str):
+        """用法：/备忘 <对象> <内容>"""
+        parts = content.strip().split(maxsplit=1)
+        if len(parts) < 2:
+            yield event.plain_result("格式错误，用法：/备忘 <对象> <内容>")
+            return
+        target, note = parts
+        uid = str(event.get_sender_id())
+        data = self._load()
+        user_list = data.get(uid, [])
+        user_list.append({"target": target, "content": note})
+        data[uid] = user_list
+        self._save(data)
+        yield event.plain_result(f"已添加备忘：[{target}] {note}")
+
+    @filter.command("查询")
+    async def list_memo(self, event: AstrMessageEvent):
+        """显示所有备忘"""
+        uid = str(event.get_sender_id())
+        data = self._load()
+        user_list = data.get(uid, [])
+        if not user_list:
+            yield event.plain_result("暂无备忘记录。")
+            return
+        lines = [f"{idx}. [{itm['target']}] {itm['content']}" for idx, itm in enumerate(user_list,1)]
+        yield event.plain_result("备忘列表：\n" + "\n".join(lines))
+
+    @filter.command("删除")
+    async def del_memo(self, event: AstrMessageEvent, target: str):
+        """用法：/删除 <对象>"""
+        uid = str(event.get_sender_id())
+        data = self._load()
+        user_list = data.get(uid, [])
+        new_list = [itm for itm in user_list if itm['target'] != target]
+        removed = len(user_list) - len(new_list)
+        if removed == 0:
+            yield event.plain_result(f"未找到与 [{target}] 相关的备忘。")
+            return
+        data[uid] = new_list
+        self._save(data)
+        yield event.plain_result(f"已删除 {removed} 条与 [{target}] 相关的备忘。")
 
     async def terminate(self):
-        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        logger.info("备忘录插件已停用")

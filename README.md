@@ -1,8 +1,10 @@
-# helloworld
+# 简易备忘录
 
-AstrBot 插件模板
+AstrBot 简易备忘录
 
-A template plugin for AstrBot plugin feature
+/备忘 [a] [b] 记录内容为b的备忘项a
+/查询         显示现有全部备忘信息
+/删除 [a]     删除备忘项a
 
 # 支持
 
