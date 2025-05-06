@@ -33,24 +33,19 @@ class MemoPlugin(Star):
             logger.error(f"保存备忘录失败: {e}")
 
     @filter.command("备忘")
-    async def add_memo(self, event: AstrMessageEvent, content: str):
+    async def add_memo(self, event: AstrMessageEvent, target: str, content: str):
         """用法：/备忘 <对象> <内容>"""
-        parts = content.strip().split(maxsplit=1)
-        if len(parts) < 2:
-            yield event.plain_result("格式错误，用法：/备忘 <对象> <内容>")
-            return
-        target, note = parts
         uid = str(event.get_sender_id())
         data = self._load()
         user_list = data.get(uid, [])
-        user_list.append({"target": target, "content": note})
+        user_list.append({"target": target, "content": content})
         data[uid] = user_list
         self._save(data)
-        yield event.plain_result(f"已添加备忘：[{target}] {note}")
+        yield event.plain_result(f"已添加备忘：[{target}] {content}")
 
     @filter.command("查询")
     async def list_memo(self, event: AstrMessageEvent):
-        """显示所有备忘"""
+        """显示所有备忘信息"""
         uid = str(event.get_sender_id())
         data = self._load()
         user_list = data.get(uid, [])
@@ -61,19 +56,38 @@ class MemoPlugin(Star):
         yield event.plain_result("备忘列表：\n" + "\n".join(lines))
 
     @filter.command("删除")
-    async def del_memo(self, event: AstrMessageEvent, target: str):
-        """用法：/删除 <对象>"""
+    async def del_memo(self, event: AstrMessageEvent, key: str):
+        """用法：/删除 <序号|对象|all>，序号删除单条，keyword删除对应所有keyword，all清空"""
         uid = str(event.get_sender_id())
         data = self._load()
         user_list = data.get(uid, [])
-        new_list = [itm for itm in user_list if itm['target'] != target]
-        removed = len(user_list) - len(new_list)
-        if removed == 0:
-            yield event.plain_result(f"未找到与 [{target}] 相关的备忘。")
+        # 清空
+        if key.lower() == 'all':
+            count = len(user_list)
+            data[uid] = []
+            self._save(data)
+            yield event.plain_result(f"已清空所有备忘，共删除 {count} 条记录。")
+            return
+        # 通过序号删除
+        if key.isdigit():
+            idx = int(key) - 1
+            if 0 <= idx < len(user_list):
+                removed = user_list.pop(idx)
+                data[uid] = user_list
+                self._save(data)
+                yield event.plain_result(f"已删除序号 {key}：[{removed['target']}] {removed['content']}")
+            else:
+                yield event.plain_result(f"序号 {key} 不存在。")
+            return
+        # 通过keyword删除
+        new_list = [itm for itm in user_list if itm['target'] != key]
+        removed_count = len(user_list) - len(new_list)
+        if removed_count == 0:
+            yield event.plain_result(f"未找到与 [{key}] 相关的备忘。")
             return
         data[uid] = new_list
         self._save(data)
-        yield event.plain_result(f"已删除 {removed} 条与 [{target}] 相关的备忘。")
+        yield event.plain_result(f"已删除 {removed_count} 条与 [{key}] 相关的备忘。")
 
     async def terminate(self):
         logger.info("备忘录插件已停用")
